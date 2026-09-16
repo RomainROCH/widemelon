@@ -49,9 +49,14 @@ QRect itemBounds(QWidget* canvas, const PhoneLayoutItem& item)
 
 void drag(QWidget* canvas, const QPoint& start, const QPoint& delta)
 {
-    QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, start);
-    QTest::mouseMove(canvas, start + delta);
-    QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, start + delta);
+    // Qt 5's QWidget mouseMove only moves the system cursor, which does not
+    // deliver a move on the offscreen platform. The QWindow overload sends
+    // the complete input sequence through Qt on both Qt 5 and Qt 6.
+    QWindow* window = canvas->window()->windowHandle();
+    const QPoint position = canvas->mapTo(canvas->window(), start);
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, position);
+    QTest::mouseMove(window, position + delta);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, position + delta);
 }
 }
 

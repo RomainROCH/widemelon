@@ -11,8 +11,9 @@ const path = require('node:path');
 const {createInterface} = require('node:readline');
 const {setTimeout: delay} = require('node:timers/promises');
 
-async function waitFor(check) {
-  for (let i = 0; i < 300; i++) {
+async function waitFor(check, timeoutMs = 3000) {
+  const deadline = performance.now() + timeoutMs;
+  while (performance.now() < deadline) {
     if (await check()) return;
     await delay(10);
   }
@@ -50,7 +51,9 @@ async function waitFor(check) {
       const match = line.match(/DevTools listening on (ws:\/\/\S+)/);
       if (match) endpoint = match[1];
     });
-    await waitFor(() => endpoint);
+    // A cold Chrome start on a shared CI runner can exceed the shorter
+    // input/state deadline. This does not relax any controller assertions.
+    await waitFor(() => endpoint, 15000);
     cdp = new WebSocket(endpoint);
     await new Promise((resolve, reject) => { cdp.onopen = resolve; cdp.onerror = reject; });
     let id = 0;
