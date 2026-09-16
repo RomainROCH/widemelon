@@ -5,6 +5,7 @@
 #include "frontend/qt_sdl/PhoneProtocol.h"
 #include "frontend/qt_sdl/PhoneScreenDialog.h"
 #include "frontend/qt_sdl/PhoneLayoutDialog.h"
+#include "frontend/qt_sdl/Config.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -28,6 +29,8 @@
 #include <QWizard>
 #include <functional>
 #include <iostream>
+
+int TestPhoneLayout(QApplication& application);
 
 namespace
 {
@@ -68,6 +71,9 @@ bool released(const PhoneBridgeManager& bridge)
 int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
+    CHECK(Config::Load());
+    for (const QString& argument : application.arguments())
+        if (argument.startsWith("--layout-")) return TestPhoneLayout(application);
     const QString requestedAddress = qEnvironmentVariable("WIDEMELON_PHONE_TEST_ADDRESS");
     const bool loopbackTest = requestedAddress.isEmpty();
     const QHostAddress testAddress = loopbackTest ? QHostAddress::LocalHost : QHostAddress(requestedAddress);

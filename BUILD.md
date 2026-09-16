@@ -237,6 +237,12 @@ touch and restores the desktop fallback after a failed connection.
 
 ## Browser tests and diagnostics
 
+The standard test suite includes Qt Test mouse/keyboard interactions with the
+phone layout editor and persistence across separate processes using the real
+TOML configuration code in a temporary directory. Qt Test is required when
+building the tests; it is included in the Qt base development packages and in
+the project's vcpkg dependency selection.
+
 An optional browser smoke test uses installed Chromium and Node.js 22 or newer.
 It checks simultaneous button holds and continuous touch through the production
 bridge while streaming a generated test pattern; no ROM is needed:
@@ -249,6 +255,23 @@ Add `--gamepad` to exercise browser gamepad input, automatic virtual-control
 hiding, the toggle, and controller disconnect with a simulated standard gamepad.
 This checks the production WebSocket path but cannot prove that a particular
 phone, browser, or Backbone model exposes the controller to the Gamepad API.
+
+Add `--touchscreen-only --gamepad` to check hidden DS controls, simultaneous
+stylus/custom-action input, video acknowledgements, reload, and returning from
+portrait to landscape. Portrait keeps the existing rotate-phone prompt.
+Both the default and touchscreen-only scenarios run in the Linux x86_64 Qt 6
+CI job. To register them locally with CTest:
+
+```sh
+cmake -S tests -B build/tests -DWIDEMELON_ENABLE_BROWSER_SMOKE=ON \
+  -DCHROMIUM_EXECUTABLE=/path/to/chromium
+cmake --build build/tests
+ctest --test-dir build/tests --output-on-failure
+```
+
+With this option enabled, missing browser/Node.js prerequisites fail
+configuration instead of silently skipping the tests. No paid browser service
+is required. The CI job uses the standard runner's installed Chrome.
 
 Add `--benchmark --dialog` to measure sustained streaming during idle,
 continuous touch, and simultaneous button holds with the settings dialog open.

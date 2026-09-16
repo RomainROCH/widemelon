@@ -186,10 +186,39 @@ async function waitFor(check) {
         const shot = await tab('Page.captureScreenshot', {format: 'png'});
         await writeFile(screenshotArg.slice('--screenshot='.length), Buffer.from(shot.data, 'base64'));
       }
+      // The old document can still report a paired layout immediately after
+      // Page.reload returns. Require a new document and fresh video ACKs.
+      await evaluate('window.beforeLayoutReload = true');
       await tab('Page.reload');
-      await waitFor(async () => evaluate("document.getElementById('pairing')?.hidden === true"));
+      await waitFor(async () => evaluate("!window.beforeLayoutReload && document.getElementById('pairing')?.hidden === true"));
+      const reloadedFrames = state.framesAcked;
+      await waitFor(() => state.connected && state.framesAcked > reloadedFrames + 3);
       await assertLayout();
-      console.log('Real Chromium touchscreen-only visibility, stylus, custom action, streaming and reload passed');
+      // Portrait retains the existing rotate prompt; returning to landscape
+      // must restore touch/action targets without bringing back DS controls.
+      for (const [width, height] of [[430, 932], [932, 430], [844, 390]]) {
+        await tab('Emulation.setDeviceMetricsOverride', {width, height, deviceScaleFactor: 1, mobile: true});
+        if (height > width) {
+          assert.equal(await evaluate("getComputedStyle(document.getElementById('rotate')).display"), 'grid');
+          assert.equal(await evaluate("getComputedStyle(document.getElementById('controller')).display"), 'none');
+          continue;
+        }
+        await assertLayout();
+        const targets = await evaluate(`['screen', 'custom-pause'].map(id => {
+          const r = document.querySelector('[data-layout-id="' + id + '"]').getBoundingClientRect();
+          return {x: r.x + r.width / 2, y: r.y + r.height / 2, width: r.width, height: r.height};
+        })`);
+        for (const target of targets) {
+          assert(target.width > 0 && target.height > 0);
+          assert(target.x > 0 && target.x < width && target.y > 0 && target.y < height);
+        }
+        await touch('touchStart', targets.map((target, index) => point(index + 1, target)));
+        await waitFor(() => state.touch >= 0x80000000 && state.hotkeys === (1 << 2));
+        assert.equal(state.keys, 0xFFF);
+        await touch('touchEnd', []);
+        await waitFor(() => state.touch === 0 && state.hotkeys === 0);
+      }
+      console.log('Real Chromium touchscreen-only visibility, stylus, custom action, streaming, reload and orientation passed');
       return;
     }
     if (benchmark) {

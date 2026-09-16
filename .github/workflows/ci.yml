@@ -46,3 +46,18 @@ jobs:
         env:
           WIDEMELON_USE_QT6: ${{ matrix.qt == 6 && '1' || '0' }}
         run: ./scripts/build.sh
+
+      - name: Set up Node.js for real-browser tests
+        if: matrix.qt == 6 && matrix.architecture.name == 'x86_64'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Test phone layouts in real Chromium
+        if: matrix.qt == 6 && matrix.architecture.name == 'x86_64'
+        run: |
+          cmake -S tests -B build/tests -DUSE_QT6=ON \
+            -DWIDEMELON_ENABLE_BROWSER_SMOKE=ON \
+            -DNODE_EXECUTABLE="$(command -v node)" \
+            -DCHROMIUM_EXECUTABLE="$(command -v google-chrome)"
+          ctest --test-dir build/tests --output-on-failure -R '^phone_browser_(default|touchscreen_only)$'

@@ -4,6 +4,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(WIDEMELON_ENABLE_STREAM_BENCHMARK
     "Build the optional Chromium streaming benchmark (requires a working DevTools browser)" OFF)
+option(WIDEMELON_ENABLE_BROWSER_SMOKE
+    "Run real Chromium controller layout tests (requires Node.js 22+)" OFF)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -33,7 +35,7 @@ if(BUILD_TESTING)
     else()
         find_package(QT NAMES Qt6 Qt5 COMPONENTS Core Gui Network WebSockets REQUIRED)
     endif()
-    find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Core Concurrent Gui Widgets Network WebSockets REQUIRED)
+    find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Core Concurrent Gui Widgets Network WebSockets Test REQUIRED)
     add_executable(phone_protocol_test phone_protocol_test.cpp ../src/frontend/qt_sdl/PhoneSecurity.cpp)
     target_include_directories(phone_protocol_test PRIVATE ../src)
     target_link_libraries(phone_protocol_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Network)
@@ -44,7 +46,8 @@ if(BUILD_TESTING)
     target_link_libraries(phone_transport_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::WebSockets)
     add_test(NAME phone_transport COMMAND phone_transport_test)
 
-    add_executable(phone_bridge_test phone_bridge_test.cpp phone_test_services.cpp
+    add_executable(phone_bridge_test phone_bridge_test.cpp phone_layout_test.cpp phone_test_services.cpp
+        ../src/frontend/qt_sdl/Config.cpp
         ../src/frontend/qt_sdl/PhoneBridge.cpp ../src/frontend/qt_sdl/PhoneSecurity.cpp
         ../src/frontend/qt_sdl/PhoneLayout.cpp ../src/frontend/qt_sdl/PhoneFirewall.cpp
         ../src/frontend/qt_sdl/PhoneScreenDialog.cpp ../src/frontend/qt_sdl/PhoneLayoutDialog.cpp
@@ -60,7 +63,7 @@ if(BUILD_TESTING)
     fix_interface_includes(PkgConfig::SDL2)
     target_include_directories(phone_bridge_test PRIVATE
         $<TARGET_PROPERTY:PkgConfig::SDL2,INTERFACE_INCLUDE_DIRECTORIES>)
-    target_link_libraries(phone_bridge_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
+    target_link_libraries(phone_bridge_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Concurrent Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::WebSockets)
     get_target_property(QT_GUI_LIBRARY_TYPE Qt${QT_VERSION_MAJOR}::Gui TYPE)
     if(QT_GUI_LIBRARY_TYPE STREQUAL "STATIC_LIBRARY")
@@ -76,6 +79,10 @@ if(BUILD_TESTING)
         set(WIDEMELON_TEST_QPA offscreen)
     endif()
     set_tests_properties(phone_bridge PROPERTIES TIMEOUT 20
+        ENVIRONMENT "QT_QPA_PLATFORM=${WIDEMELON_TEST_QPA}")
+    add_test(NAME phone_layout_editor COMMAND phone_bridge_test --layout-editor)
+    add_test(NAME phone_layout_persistence COMMAND phone_bridge_test --layout-persistence)
+    set_tests_properties(phone_layout_editor phone_layout_persistence PROPERTIES TIMEOUT 30
         ENVIRONMENT "QT_QPA_PLATFORM=${WIDEMELON_TEST_QPA}")
 
     add_executable(phone_firewall_test phone_firewall_test.cpp ../src/frontend/qt_sdl/PhoneFirewall.cpp)
@@ -93,7 +100,20 @@ if(BUILD_TESTING)
     else()
         message(STATUS "Node.js 18+ not found; phone browser regression test is unavailable")
     endif()
-    find_program(CHROMIUM_EXECUTABLE NAMES chromium chromium-browser)
+    find_program(CHROMIUM_EXECUTABLE NAMES chromium chromium-browser google-chrome)
+    if(WIDEMELON_ENABLE_BROWSER_SMOKE)
+        if(NOT CHROMIUM_EXECUTABLE OR NOT NODE_EXECUTABLE OR NODE_VERSION VERSION_LESS 22)
+            message(FATAL_ERROR "Browser smoke tests require CHROMIUM_EXECUTABLE and Node.js 22+")
+        endif()
+        add_test(NAME phone_browser_default COMMAND ${NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/phone_browser_smoke.js $<TARGET_FILE:phone_bridge_test>
+            ${CHROMIUM_EXECUTABLE} --gamepad)
+        add_test(NAME phone_browser_touchscreen_only COMMAND ${NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/phone_browser_smoke.js $<TARGET_FILE:phone_bridge_test>
+            ${CHROMIUM_EXECUTABLE} --touchscreen-only --gamepad)
+        set_tests_properties(phone_browser_default phone_browser_touchscreen_only
+            PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
+    endif()
     if(WIDEMELON_ENABLE_STREAM_BENCHMARK AND CHROMIUM_EXECUTABLE
         AND NODE_EXECUTABLE AND NODE_VERSION VERSION_GREATER_EQUAL 22)
         add_test(NAME phone_stream_pacing COMMAND ${NODE_EXECUTABLE}

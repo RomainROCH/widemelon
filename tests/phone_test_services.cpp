@@ -1,37 +1,60 @@
-// In-memory configuration and file-path boundary for real bridge tests.
+// Temporary file-system boundary; tests use the production TOML configuration.
 // Copyright (C) 2026 WideMelon contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-#include "frontend/qt_sdl/Config.h"
 #include "Platform.h"
 
-#include <cstdlib>
-#include <map>
-
-namespace Config
-{
-namespace
-{
-std::map<std::string, int> integers;
-std::map<std::string, bool> booleans;
-std::map<std::string, std::string> strings;
-}
-
-Table::Table(toml::value& data, const std::string& path) : Data(data), PathPrefix(path) {}
-Table GetLocalTable(int)
-{
-    static toml::value data;
-    return Table(data, "");
-}
-int Table::GetInt(const std::string& key) { return integers[key]; }
-bool Table::GetBool(const std::string& key) { return booleans[key]; }
-std::string Table::GetString(const std::string& key) { return strings[key]; }
-void Table::SetInt(const std::string& key, int value) { integers[key] = value; }
-void Table::SetBool(const std::string& key, bool value) { booleans[key] = value; }
-void Table::SetString(const std::string& key, const std::string& value) { strings[key] = value; }
-void Save() {}
-}
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QTemporaryDir>
 
 namespace melonDS::Platform
 {
-std::string GetLocalFilePath(const std::string&) { std::abort(); }
+std::string GetLocalFilePath(const std::string& filename)
+{
+    static QTemporaryDir temporary;
+    const QString directory = qEnvironmentVariable("WIDEMELON_PHONE_TEST_CONFIG_DIR", temporary.path());
+    const QString name = QString::fromStdString(filename);
+    if (!temporary.isValid() || !QDir(directory).exists() || QFileInfo(name).fileName() != name)
+        qFatal("Invalid test configuration path");
+    return QDir(directory).filePath(name).toStdString();
+}
+
+bool CheckFileWritable(const std::string& path)
+{
+    QFile file(QString::fromStdString(path));
+    return file.open(QIODevice::WriteOnly | QIODevice::Append);
+}
+
+bool FileExists(const std::string& path)
+{
+    return QFileInfo::exists(QString::fromStdString(path));
+}
+
+// Only the legacy reader needs these file operations; all test writes go
+// through Config::Save and its real TOML serializer.
+struct FileHandle { QFile file; };
+
+FileHandle* OpenLocalFile(const std::string& path, FileMode mode)
+{
+    if (mode != FileMode::ReadText) qFatal("Unexpected test file mode");
+    auto handle = new FileHandle;
+    handle->file.setFileName(QString::fromStdString(GetLocalFilePath(path)));
+    if (handle->file.open(QIODevice::ReadOnly | QIODevice::Text)) return handle;
+    delete handle;
+    return nullptr;
+}
+
+bool CloseFile(FileHandle* handle)
+{
+    handle->file.close();
+    delete handle;
+    return true;
+}
+
+bool IsEndOfFile(FileHandle* handle) { return handle->file.atEnd(); }
+bool FileReadLine(char* line, int count, FileHandle* handle)
+{
+    return handle->file.readLine(line, count) > 0;
+}
 }

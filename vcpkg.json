@@ -40,7 +40,7 @@
 				{
 					"name": "qtbase",
 					"default-features": false,
-					"features": ["gui", "png", "jpeg", "concurrent", "network", "thread", "widgets", "opengl", "zstd", "harfbuzz"]
+					"features": ["gui", "png", "jpeg", "concurrent", "network", "thread", "widgets", "opengl", "zstd", "harfbuzz", "testlib"]
 				},
 				{
 					"name": "qtbase",
