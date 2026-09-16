@@ -128,6 +128,8 @@ the wide top screen stays on your computer.
 3. Start the connection from that dialog, then scan the QR code on the home screen
    or in the dialog.
 4. Use **Edit controller layout…** to move, resize, or customize the controls.
+   Uncheck **Show built-in DS controls** for touchscreen-only play. The bottom
+   screen, stylus input, and custom action buttons remain available.
 
 If a gamepad is connected to the phone, its standard face buttons, shoulders,
 Start/Select, D-pad, and left stick control the DS. The on-screen DS buttons

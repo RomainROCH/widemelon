@@ -5,22 +5,30 @@
 #include "Platform.h"
 
 #include <cstdlib>
+#include <map>
 
 namespace Config
 {
+namespace
+{
+std::map<std::string, int> integers;
+std::map<std::string, bool> booleans;
+std::map<std::string, std::string> strings;
+}
+
 Table::Table(toml::value& data, const std::string& path) : Data(data), PathPrefix(path) {}
 Table GetLocalTable(int)
 {
     static toml::value data;
     return Table(data, "");
 }
-int Table::GetInt(const std::string&) { return 0; }
-bool Table::GetBool(const std::string&) { return false; }
-std::string Table::GetString(const std::string&) { return {}; }
-void Table::SetInt(const std::string&, int) { std::abort(); }
-void Table::SetBool(const std::string&, bool) { std::abort(); }
-void Table::SetString(const std::string&, const std::string&) { std::abort(); }
-void Save() { std::abort(); }
+int Table::GetInt(const std::string& key) { return integers[key]; }
+bool Table::GetBool(const std::string& key) { return booleans[key]; }
+std::string Table::GetString(const std::string& key) { return strings[key]; }
+void Table::SetInt(const std::string& key, int value) { integers[key] = value; }
+void Table::SetBool(const std::string& key, bool value) { booleans[key] = value; }
+void Table::SetString(const std::string& key, const std::string& value) { strings[key] = value; }
+void Save() {}
 }
 
 namespace melonDS::Platform

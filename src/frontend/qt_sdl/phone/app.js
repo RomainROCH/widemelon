@@ -291,7 +291,10 @@
     virtualControls.setAttribute('aria-label', label);
     virtualControls.title = label;
     if (hideControls && pointers.size) {
-      pointers.clear();
+      for (const [id, pointer] of pointers) {
+        if (!controller.classList.contains('touchscreen-only') || pointer.element.dataset.hotkey === undefined)
+          pointers.delete(id);
+      }
       dpad.classList.remove('active');
       dpad.style.setProperty('--stick-x', '0px');
       dpad.style.setProperty('--stick-y', '0px');
@@ -428,6 +431,7 @@
     if (!layout || (layout.version !== 1 && layout.version !== 2) || !Array.isArray(layout.items)) return;
     releaseAll();
     hud.hidden = layout.showHud === false;
+    controller.classList.toggle('touchscreen-only', layout.showDsControls === false);
     document.querySelectorAll('[data-layout-custom]').forEach(element => element.remove());
     document.querySelectorAll('[data-layout-id]').forEach(element => { element.hidden = true; });
     for (const item of layout.items) {
@@ -445,7 +449,8 @@
         bindButton(element);
       }
       if (!element) continue;
-      element.hidden = false;
+      const builtInDsControl = ['dpad', 'face', 'l', 'r', 'start', 'select'].includes(item.id);
+      element.hidden = layout.showDsControls === false && builtInDsControl;
       if (item.id === 'dpad') element.classList.toggle('analog', item.appearance === 'analog');
       if (item.kind === 'button' && typeof item.label === 'string') {
         element.textContent = item.label.slice(0, 24);

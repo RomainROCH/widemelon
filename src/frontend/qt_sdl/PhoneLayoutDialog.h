@@ -43,6 +43,7 @@ private:
     QComboBox* actionBox;
     QComboBox* directionalStyle;
     QCheckBox* showHud;
+    QCheckBox* showDsControls;
     QDoubleSpinBox* xValue;
     QDoubleSpinBox* yValue;
     QDoubleSpinBox* widthValue;

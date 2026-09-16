@@ -4,8 +4,12 @@
 #include "frontend/qt_sdl/PhoneBridge.h"
 #include "frontend/qt_sdl/PhoneProtocol.h"
 #include "frontend/qt_sdl/PhoneScreenDialog.h"
+#include "frontend/qt_sdl/PhoneLayoutDialog.h"
 
 #include <QApplication>
+#include <QCheckBox>
+#include <QDialogButtonBox>
+#include <QShortcut>
 #include <QLabel>
 #include <QGroupBox>
 #include <QPushButton>
@@ -84,6 +88,96 @@ int main(int argc, char** argv)
     settings.consoleLog = settings.fileLog = false;
     bridge.setSettings(settings);
     bridge.setCaptureAvailable(true);
+    if (!application.arguments().contains("--browser-smoke"))
+    {
+        auto layout = PhoneControllerLayout::defaults();
+        CHECK(layout.showDsControls);
+        auto legacy = QJsonDocument::fromJson(layout.toJson().toUtf8()).object();
+        legacy.remove("showDsControls");
+        for (int version : {1, 2})
+        {
+            legacy["version"] = version;
+            bool valid = false;
+            CHECK(PhoneControllerLayout::fromJson(QString::fromUtf8(QJsonDocument(legacy).toJson()), &valid).showDsControls);
+            CHECK(valid);
+        }
+        for (const QJsonValue& invalid : {QJsonValue(), QJsonValue("false"), QJsonValue(0)})
+        {
+            legacy["showDsControls"] = invalid;
+            CHECK(PhoneControllerLayout::fromJson(QString::fromUtf8(QJsonDocument(legacy).toJson())).showDsControls);
+        }
+        layout.showDsControls = false;
+        layout.items[3].appearance = "analog";
+        const QRectF originalDpad = layout.items[3].rect;
+        PhoneLayoutItem action;
+        action.id = "custom-pause";
+        action.label = "Pause";
+        action.hotkey = PhoneLayoutHotkeyActions().first().id;
+        action.removable = true;
+        action.rect = QRectF(.8, .7, .1, .1);
+        layout.items.append(action);
+        bool valid = false;
+        const auto restored = PhoneControllerLayout::fromJson(layout.toJson(), &valid);
+        CHECK(valid && !restored.showDsControls && restored.items.size() == 8);
+        CHECK(restored.toJson() == layout.toJson());
+        CHECK(restored.items[3].rect == originalDpad && restored.items[3].appearance == "analog");
+        CHECK(restored.items.last().removable && restored.items.last().hotkey == action.hotkey);
+        CHECK(PhoneControllerLayout::fromJson("invalid JSON").showDsControls);
+
+        auto editorSettings = settings;
+        editorSettings.layoutJson = layout.toJson();
+        bridge.setSettings(editorSettings);
+        PhoneLayoutDialog editor(&bridge);
+        auto toggle = editor.findChild<QCheckBox*>("showDsControls");
+        CHECK(toggle && !toggle->isChecked());
+        toggle->setChecked(true);
+        QShortcut* undo = nullptr;
+        QShortcut* redo = nullptr;
+        for (QShortcut* shortcut : editor.findChildren<QShortcut*>())
+        {
+            if (shortcut->key() == QKeySequence(QKeySequence::Undo)) undo = shortcut;
+            if (shortcut->key() == QKeySequence(QKeySequence::Redo)) redo = shortcut;
+        }
+        CHECK(undo && redo);
+        CHECK(QMetaObject::invokeMethod(undo, "activated", Qt::DirectConnection));
+        CHECK(!toggle->isChecked());
+        CHECK(QMetaObject::invokeMethod(redo, "activated", Qt::DirectConnection));
+        CHECK(toggle->isChecked());
+        toggle->setChecked(false);
+        auto editorButtons = editor.findChild<QDialogButtonBox*>();
+        CHECK(editorButtons);
+        for (QPushButton* button : editor.findChildren<QPushButton*>())
+            if (editorButtons->buttonRole(button) == QDialogButtonBox::ApplyRole) button->click();
+        CHECK(PhoneBridgeManager::loadSettings().layoutJson == layout.toJson());
+        CHECK(bridge.settings().layoutJson == layout.toJson());
+        for (QPushButton* button : editor.findChildren<QPushButton*>())
+            if (button->text() == "Reset layout") button->click();
+        CHECK(toggle->isChecked());
+        CHECK(QMetaObject::invokeMethod(undo, "activated", Qt::DirectConnection));
+        CHECK(!toggle->isChecked());
+        editorButtons->button(QDialogButtonBox::Save)->click();
+        CHECK(PhoneBridgeManager::loadSettings().layoutJson == layout.toJson());
+        CHECK(bridge.settings().layoutJson == layout.toJson());
+        PhoneLayoutDialog reopened(&bridge);
+        CHECK(!reopened.findChild<QCheckBox*>("showDsControls")->isChecked());
+        // Restore the fixture before the existing transport regressions.
+        PhoneBridgeManager::saveSettings(settings);
+        bridge.setSettings(settings);
+    }
+    if (application.arguments().contains("--touchscreen-only"))
+    {
+        auto layout = PhoneControllerLayout::defaults();
+        layout.showDsControls = false;
+        PhoneLayoutItem action;
+        action.id = "custom-pause";
+        action.label = "Pause";
+        action.hotkey = PhoneLayoutHotkeyActions().first().id;
+        action.removable = true;
+        action.rect = QRectF(.8, .7, .1, .1);
+        layout.items.append(action);
+        settings.layoutJson = layout.toJson();
+        bridge.setSettings(settings);
+    }
     CHECK(bridge.start());
     if (application.arguments().contains("--browser-smoke"))
     {
@@ -106,6 +200,7 @@ int main(int argc, char** argv)
             const qint64 now = eventClock.elapsed();
             const QJsonObject state{{"connected", bridge.isConnected()},
                 {"keys", int(bridge.remoteKeyMask())}, {"touch", double(bridge.remoteTouchSnapshot())},
+                {"hotkeys", int(bridge.remoteHotkeyMask())},
                 {"framesAcked", double(metrics.framesAcked)}, {"framesOffered", double(metrics.framesOffered)},
                 {"framesEncoded", double(metrics.framesEncoded)}, {"framesSent", double(metrics.framesSent)},
                 {"framesDropped", double(metrics.framesDropped)}, {"encodeMs", metrics.averageEncodeMs},

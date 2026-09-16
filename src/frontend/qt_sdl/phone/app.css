@@ -299,7 +299,7 @@ button.active, button:active {
 main.gamepad-mode #dpad,
 main.gamepad-mode #face,
 main.gamepad-mode [data-button],
-main.gamepad-mode [data-hotkey] { display: none; }
+main.gamepad-mode:not(.touchscreen-only) [data-hotkey] { display: none; }
 
 main {
   position: relative;
@@ -450,6 +450,7 @@ main {
 }
 
 [data-layout-id]:not(#screen) { z-index: 1; }
+[data-layout-id][hidden] { display: none; }
 
 .custom {
   min-width: 0;

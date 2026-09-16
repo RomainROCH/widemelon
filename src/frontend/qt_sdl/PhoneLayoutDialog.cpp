@@ -74,7 +74,7 @@ public:
     int selection() const { return selected; }
     void setSelection(int value)
     {
-        selected = value;
+        selected = value >= 0 && itemVisible(value) ? value : -1;
         update();
         if (selectionChanged) selectionChanged(selected);
     }
@@ -102,6 +102,7 @@ protected:
 
         for (int index = 0; index < layout->items.size(); index++)
         {
+            if (!itemVisible(index)) continue;
             const PhoneLayoutItem& item = layout->items[index];
             const QRectF box = itemRect(item);
             if (item.kind == PhoneLayoutItem::Screen)
@@ -312,10 +313,16 @@ private:
         return QRectF(box.right() - 5, box.bottom() - 5, 10, 10);
     }
 
+    bool itemVisible(int index) const
+    {
+        const PhoneLayoutItem& item = layout->items[index];
+        return layout->showDsControls || item.kind == PhoneLayoutItem::Screen || item.removable;
+    }
+
     int itemAt(const QPointF& position) const
     {
         for (int index = layout->items.size() - 1; index >= 0; index--)
-            if (itemRect(layout->items[index]).contains(position)) return index;
+            if (itemVisible(index) && itemRect(layout->items[index]).contains(position)) return index;
         return -1;
     }
 
@@ -391,6 +398,13 @@ PhoneLayoutDialog::PhoneLayoutDialog(PhoneBridgeManager* manager, QWidget* paren
     showHud->setChecked(layout.showHud);
     inspectorLayout->addWidget(showHud);
 
+    showDsControls = new QCheckBox("Show built-in DS controls");
+    showDsControls->setObjectName("showDsControls");
+    showDsControls->setToolTip("Show the D-pad or analog stick, ABXY, L/R, and Start/Select. "
+                               "The touch screen and custom action buttons remain available.");
+    showDsControls->setChecked(layout.showDsControls);
+    inspectorLayout->addWidget(showDsControls);
+
     auto addButton = new QPushButton("Add action button");
     removeButton = new QPushButton("Remove selected");
     auto resetButton = new QPushButton("Reset layout");
@@ -419,6 +433,13 @@ PhoneLayoutDialog::PhoneLayoutDialog(PhoneBridgeManager* manager, QWidget* paren
         rememberForUndo();
         layout.showHud = checked;
         canvas->update();
+    });
+    connect(showDsControls, &QCheckBox::toggled, this, [this](bool checked)
+    {
+        if (updatingInspector) return;
+        rememberForUndo();
+        layout.showDsControls = checked;
+        canvas->setSelection(canvas->selection());
     });
     for (QDoubleSpinBox* spin : {xValue, yValue, widthValue, heightValue})
         connect(spin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this] { inspectorChanged(); });
@@ -471,6 +492,7 @@ void PhoneLayoutDialog::updateInspector()
     widthValue->setEnabled(selected);
     heightValue->setEnabled(selected && lockedNormalizedRatio(layout.items[index].kind) == 0);
     showHud->setChecked(layout.showHud);
+    showDsControls->setChecked(layout.showDsControls);
     if (selected)
     {
         const PhoneLayoutItem& item = layout.items[index];

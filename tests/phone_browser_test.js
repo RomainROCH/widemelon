@@ -9,6 +9,7 @@ const path = require('node:path');
 
 function page(storageBlocked = false, savedMapping = null) {
   const elements = new Map();
+  const customElements = new Set();
   function element() {
     const handlers = new Map();
     const classes = new Set();
@@ -20,6 +21,8 @@ function page(storageBlocked = false, savedMapping = null) {
       addEventListener(name, fn) { handlers.set(name, fn); },
       fire(name, extra = {}) { handlers.get(name)?.({preventDefault() {}, ...extra}); },
       setPointerCapture() {}, setAttribute() {}, focus() {},
+      appendChild(child) { customElements.add(child); },
+      remove() { customElements.delete(this); },
       getBoundingClientRect() { return {left: 0, top: 0, width: 256, height: 192}; }
     };
   }
@@ -28,18 +31,30 @@ function page(storageBlocked = false, savedMapping = null) {
     if (!elements.has(id)) elements.set(id, element());
     return elements.get(id);
   };
-  const buttons = [['x', 10], ['y', 11], ['a', 0], ['b', 1], ['l', 9], ['r', 8]].map(([id, bit]) => {
+  const buttons = [['x', 10], ['y', 11], ['a', 0], ['b', 1], ['l', 9], ['r', 8],
+    ['select', 2], ['start', 3]].map(([id, bit]) => {
     const button = document.getElementById(id);
     button.dataset.button = String(bit);
     return button;
   });
+  for (const id of ['screen', 'dpad', 'face', 'l', 'r', 'start', 'select'])
+    document.getElementById(id).dataset.layoutId = id;
   const mapTargets = Array.from({length: 12}, (_, bit) => {
     const target = document.getElementById(`map-${bit}`);
     target.dataset.dsBit = String(bit);
     return target;
   });
-  document.querySelectorAll = selector => selector.includes('[data-button]') ? buttons
-    : selector === '#controller-diagram .map-target' ? mapTargets : [];
+  document.createElement = element;
+  document.querySelectorAll = selector => {
+    const all = [...elements.values(), ...customElements];
+    if (selector.includes('[data-button]')) return all.filter(el => el.dataset.button !== undefined
+      || (selector.includes('[data-hotkey]') && el.dataset.hotkey !== undefined));
+    if (selector === '[data-layout-id]') return all.filter(el => el.dataset.layoutId);
+    if (selector === '[data-layout-custom]') return [...customElements];
+    return selector === '#controller-diagram .map-target' ? mapTargets : [];
+  };
+  document.querySelector = selector => document.querySelectorAll('[data-layout-id]')
+    .find(el => selector === `[data-layout-id="${el.dataset.layoutId}"]`) || null;
   const draws = [];
   document.getElementById('screen').getContext = () => ({drawImage(bitmap) { draws.push(bitmap.id); }});
   const window = element();
@@ -80,7 +95,7 @@ function page(storageBlocked = false, savedMapping = null) {
   if (savedMapping) storage.set('widemelonGamepadMapping', JSON.stringify(savedMapping));
   const gamepads = [];
   const sandbox = {document, window, WebSocket, ArrayBuffer, DataView, Uint8Array, Blob,
-    URLSearchParams, performance: {now: () => clock},
+    URLSearchParams, CSS: {escape: value => value}, performance: {now: () => clock},
     navigator: {getGamepads: () => gamepads},
     location: {host: '127.0.0.1:24800', hash: '#pair=' + 'A'.repeat(43), pathname: '/', search: ''},
     history: {replaceState(a, b, url) { replacedUrls.push(url); }},
@@ -118,6 +133,60 @@ async function decode(p, id) {
 }
 
 (async () => {
+  const layoutPage = page();
+  const layoutSocket = layoutPage.sockets[0];
+  const builtInIds = ['dpad', 'face', 'l', 'r', 'start', 'select'];
+  const layout = {version: 2, items: ['screen', ...builtInIds].map(id => ({
+    id, kind: id === 'screen' ? 'screen' : id === 'dpad' ? 'directional' : id === 'face' ? 'face' : 'button',
+    x: .1, y: .2, w: .3, h: .4, appearance: 'analog'
+  }))};
+  layout.items.push({id: 'custom-pause', kind: 'button', label: 'Pause', hotkey: 2,
+    x: .8, y: .7, w: .1, h: .1});
+  const control = id => layoutPage.document.querySelector(`[data-layout-id="${id}"]`);
+  const apply = () => layoutSocket.message({v: 2, type: 'layout', layout});
+  layoutSocket.open();
+  layoutSocket.message({v: 2, type: 'hello', layout});
+  for (const id of builtInIds) assert.equal(control(id).hidden, false, 'legacy layouts show DS controls');
+  layoutPage.document.getElementById('a').fire('pointerdown', {pointerId: 1});
+  assert.equal(layoutSocket.sent.at(-1).buttons, 1);
+  layout.showDsControls = false;
+  apply();
+  assert.equal(layoutSocket.sent.findLast(m => m.type === 'input').buttons, 0, 'layout change releases held input');
+  for (const id of builtInIds) assert.equal(control(id).hidden, true, `${id} must be hidden`);
+  assert.equal(control('screen').hidden, false);
+  assert.equal(control('custom-pause').hidden, false);
+  control('screen').fire('pointerdown', {pointerId: 2, clientX: 123, clientY: 45});
+  control('custom-pause').fire('pointerdown', {pointerId: 3});
+  assert.deepEqual(layoutSocket.sent.at(-1).touch, {active: true, x: 123, y: 45});
+  assert.equal(layoutSocket.sent.at(-1).hotkeys, 1 << 2);
+  layoutSocket.message(frame(77));
+  await decode(layoutPage, 77);
+  assert.deepEqual(layoutPage.draws, [77], 'touchscreen-only still draws frames');
+  assert.equal(layoutSocket.sent.at(-1).type, 'frameAck');
+  const layoutPad = {index: 0, connected: true, mapping: 'standard',
+    buttons: Array.from({length: 16}, () => ({pressed: false})), axes: [0, 0]};
+  layoutPage.gamepads[0] = layoutPad;
+  layoutPage.tick(16);
+  assert.equal(layoutSocket.sent.findLast(m => m.type === 'input').hotkeys, 1 << 2,
+    'gamepad mode preserves custom action holds in touchscreen-only layouts');
+  layoutPage.document.getElementById('virtual-controls').fire('click');
+  for (const id of builtInIds) assert.equal(control(id).hidden, true, 'phone toggle respects the saved layout');
+  layoutPad.connected = false;
+  layoutPage.tick(16);
+  for (const id of builtInIds) assert.equal(control(id).hidden, true, 'gamepad disconnect respects the saved layout');
+  layoutSocket.close();
+  layoutPage.tick(250);
+  const reconnectedLayoutSocket = layoutPage.sockets.at(-1);
+  reconnectedLayoutSocket.open();
+  reconnectedLayoutSocket.message({v: 2, type: 'hello', layout});
+  for (const id of builtInIds) assert.equal(control(id).hidden, true, 'reconnect restores touchscreen-only layout');
+  layout.showDsControls = true;
+  reconnectedLayoutSocket.message({v: 2, type: 'layout', layout});
+  for (const id of builtInIds) assert.equal(control(id).hidden, false);
+  assert(control('dpad').classList.contains('analog'), 'hidden controls retain their appearance');
+  assert.equal(control('dpad').style.left, '10%', 'hidden controls retain their geometry');
+  assert.equal(layoutPage.document.querySelectorAll('[data-layout-custom]').length, 1);
+
   const multi = page();
   const controller = multi.sockets[0];
   controller.open();

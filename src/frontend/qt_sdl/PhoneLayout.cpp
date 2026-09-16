@@ -97,6 +97,7 @@ PhoneControllerLayout PhoneControllerLayout::fromJson(const QString& json, bool*
 
     PhoneControllerLayout result;
     result.showHud = root.value("showHud").toBool(true);
+    result.showDsControls = root.value("showDsControls").toBool(true);
     QSet<QString> ids;
     const QSet<QString> required {"screen", "l", "r", "dpad", "face", "select", "start"};
     int screens = 0;
@@ -175,6 +176,7 @@ QString PhoneControllerLayout::toJson() const
         };
         array.append(object);
     }
-    return QString::fromUtf8(QJsonDocument(QJsonObject{{"version", 2}, {"showHud", showHud}, {"items", array}})
+    return QString::fromUtf8(QJsonDocument(QJsonObject{{"version", 2}, {"showHud", showHud},
+        {"showDsControls", showDsControls}, {"items", array}})
                                  .toJson(QJsonDocument::Compact));
 }

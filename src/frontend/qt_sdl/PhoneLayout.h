@@ -30,6 +30,7 @@ public:
     QString toJson() const;
     QList<PhoneLayoutItem> items;
     bool showHud = true;
+    bool showDsControls = true;
 };
 
 struct PhoneHotkeyAction

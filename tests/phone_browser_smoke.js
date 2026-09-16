@@ -29,6 +29,7 @@ async function waitFor(check) {
   try {
     const bridgeArgs = ['--browser-smoke'];
     if (process.argv.includes('--dialog')) bridgeArgs.push('--benchmark-dialog');
+    if (process.argv.includes('--touchscreen-only')) bridgeArgs.push('--touchscreen-only');
     const bridge = spawn(path.resolve(process.argv[2]), bridgeArgs,
       {env: {...process.env, QT_QPA_PLATFORM: 'offscreen'}, stdio: ['ignore', 'pipe', 'pipe']});
     children.push(bridge);
@@ -149,6 +150,48 @@ async function waitFor(check) {
     const point = (id, p) => ({id, x: p.x, y: p.y, radiusX: 4, radiusY: 4, force: 1});
     const fingers = [point(1, x), point(2, a)];
     const touch = (type, touchPoints) => tab('Input.dispatchTouchEvent', {type, touchPoints});
+    if (process.argv.includes('--touchscreen-only')) {
+      const evaluate = async expression => (await tab('Runtime.evaluate', {expression, returnByValue: true})).result.value;
+      const assertLayout = async () => {
+        assert.equal(await evaluate(`['dpad', 'face', 'l', 'r', 'start', 'select'].every(id =>
+          getComputedStyle(document.querySelector('[data-layout-id="' + id + '"]')).display === 'none')`), true);
+        assert.equal(await evaluate(`['screen', 'custom-pause'].every(id =>
+          getComputedStyle(document.querySelector('[data-layout-id="' + id + '"]')).display !== 'none')`), true);
+      };
+      await assertLayout();
+      const action = await evaluate(`(() => {
+        const r = document.querySelector('[data-layout-id="custom-pause"]').getBoundingClientRect();
+        return {x: r.x + r.width / 2, y: r.y + r.height / 2};
+      })()`);
+      await touch('touchStart', [point(3, screen), point(4, action)]);
+      await waitFor(() => state.touch >= 0x80000000 && state.hotkeys === (1 << 2));
+      assert.equal(state.keys, 0xFFF);
+      const before = state.framesAcked;
+      await waitFor(() => state.framesAcked > before + 3);
+      if (process.argv.includes('--gamepad')) {
+        await evaluate('testPad.connected = true');
+        await waitFor(async () => evaluate("document.getElementById('controller').classList.contains('gamepad-mode')"));
+        await assertLayout();
+        assert.equal(state.hotkeys, 1 << 2, 'custom action remains held when gamepad mode starts');
+        await evaluate("document.getElementById('virtual-controls').click()");
+        await assertLayout();
+        await evaluate('testPad.connected = false');
+        await waitFor(async () => evaluate("!document.getElementById('controller').classList.contains('gamepad-mode')"));
+        await assertLayout();
+      }
+      await touch('touchEnd', []);
+      await waitFor(() => state.touch === 0 && state.hotkeys === 0);
+      const screenshotArg = process.argv.find(value => value.startsWith('--screenshot='));
+      if (screenshotArg) {
+        const shot = await tab('Page.captureScreenshot', {format: 'png'});
+        await writeFile(screenshotArg.slice('--screenshot='.length), Buffer.from(shot.data, 'base64'));
+      }
+      await tab('Page.reload');
+      await waitFor(async () => evaluate("document.getElementById('pairing')?.hidden === true"));
+      await assertLayout();
+      console.log('Real Chromium touchscreen-only visibility, stylus, custom action, streaming and reload passed');
+      return;
+    }
     if (benchmark) {
       const evaluate = async expression => (await tab('Runtime.evaluate', {expression, returnByValue: true})).result.value;
       for (const phase of ['idle', 'motion', 'buttons']) {

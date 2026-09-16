@@ -132,13 +132,22 @@ The controller layout editor supports moving and resizing controls, undo and
 redo, custom emulator-action buttons, D-pad or analog-stick input, and optional
 status, FPS, and frame text.
 
+For touchscreen-only play, uncheck **Show built-in DS controls** in
+**Edit controller layout…** and select **Apply** or **Save**. This hides the
+D-pad or analog stick, ABXY, L/R, and Start/Select while preserving bottom-screen
+streaming, stylus input, and custom action buttons. The setting is saved with
+the layout and supports undo/redo. Re-enabling it restores the saved control
+positions; **Reset layout** restores the default with DS controls shown.
+Existing layouts continue to show DS controls by default.
+
 The phone page polls the browser Gamepad API for a controller with a standard
 mapping. It merges the controller's buttons and left-stick directions with the
 existing phone input snapshot. While such a controller is present, virtual DS
 buttons are hidden by default and can be shown with the page's **Show controls**
 button. Stylus touch remains available on the bottom screen. Disconnecting the
 controller or hiding the page releases held hardware buttons and restores the
-virtual controls.
+virtual controls allowed by the saved layout. **Show controls** on the phone
+does not override a layout with **Show built-in DS controls** unchecked.
 
 The wrench panel provides an interactive controller diagram. Selecting a DS
 control arms capture; after all inputs return to neutral, the next standard
